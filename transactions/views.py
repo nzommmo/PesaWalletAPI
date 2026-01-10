@@ -6,7 +6,7 @@ from django.db import transaction
 from decimal import Decimal
 from transactions.models import Transaction
 from notifications.models import Notification
-from transactions.serializers import AllocateFundsSerializer,TopUpSerializer
+from transactions.serializers import AllocateFundsSerializer,TopUpSerializer,IncomeSerializer
 from accounts.models import Account
 from datetime import timedelta
 from django.utils import timezone
@@ -150,3 +150,44 @@ class ReportsView(APIView):
             "accounts": accounts_data,
             "transactions_last_month": transactions_data
         })
+    
+
+class IncomeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = IncomeSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        account = serializer.validated_data["account"]
+        amount = serializer.validated_data["amount"]
+
+        with transaction.atomic():
+            # Update account balance
+            account.balance += amount
+            account.save()
+
+            # Create transaction
+            txn = Transaction.objects.create(
+                user=request.user,
+                destination_account=account,
+                amount=amount,
+                transaction_type="INCOME",
+                status="SUCCESS"
+            )
+
+            # Create notification
+            Notification.objects.create(
+                user=request.user,
+                notification_type="SUCCESS",
+                message=f"Income of {amount} added to {account.account_name}"
+            )
+
+        return Response(
+            {
+                "message": f"Income of {amount} added successfully",
+                "transaction_id": txn.id,
+                "account_balance": account.balance
+            },
+            status=status.HTTP_201_CREATED
+        )

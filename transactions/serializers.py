@@ -48,3 +48,19 @@ class TopUpSerializer(serializers.Serializer):
         if value <= 0:
             raise serializers.ValidationError("Amount must be greater than zero")
         return value
+
+
+class IncomeSerializer(serializers.Serializer):
+    account_id = serializers.IntegerField()
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    def validate(self, data):
+        user = self.context["request"].user
+        try:
+            account = Account.objects.get(id=data["account_id"], user=user)
+        except Account.DoesNotExist:
+            raise serializers.ValidationError("Invalid account")
+        if data["amount"] <= 0:
+            raise serializers.ValidationError("Amount must be greater than zero")
+        data["account"] = account
+        return data
