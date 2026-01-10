@@ -8,6 +8,9 @@ from transactions.models import Transaction
 from notifications.models import Notification
 from transactions.serializers import AllocateFundsSerializer,TopUpSerializer
 from accounts.models import Account
+from datetime import timedelta
+from django.utils import timezone
+
 
 class AllocateFundsView(APIView):
     permission_classes = [IsAuthenticated]
@@ -108,3 +111,42 @@ class TopUpView(APIView):
             {"message": "Top-up successful"},
             status=status.HTTP_200_OK
         )
+
+
+class ReportsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        accounts = Account.objects.filter(user=user)
+        total_balance = sum(a.balance for a in accounts)
+
+        accounts_data = [
+            {
+                "account_name": a.account_name,
+                "balance": a.balance,
+                "account_type": a.account_type
+            } for a in accounts
+        ]
+
+        last_month = timezone.now() - timedelta(days=30)
+        transactions = Transaction.objects.filter(
+            user=user,
+            created_at__gte=last_month
+        ).order_by('-created_at')
+
+        transactions_data = [
+            {
+                "transaction_type": t.transaction_type,
+                "amount": t.amount,
+                "status": t.status,
+                "created_at": t.created_at
+            } for t in transactions
+        ]
+
+        return Response({
+            "total_balance": total_balance,
+            "accounts": accounts_data,
+            "transactions_last_month": transactions_data
+        })
