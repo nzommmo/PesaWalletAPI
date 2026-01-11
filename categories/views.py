@@ -1,11 +1,11 @@
-from rest_framework.viewsets import ModelViewSet
-from rest_framework.permissions import IsAuthenticated
-from categories.models import Category
-from categories.serializers import CategorySerializer
+# categories/views.py
+from rest_framework import viewsets, permissions
+from .models import Category
+from .serializers import CategorySerializer
 
-class CategoryViewSet(ModelViewSet):
+class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Category.objects.filter(user=self.request.user)

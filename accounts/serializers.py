@@ -1,37 +1,51 @@
 from rest_framework import serializers
 from .models import Account
+from categories.models import Category
 
 class AccountSerializer(serializers.ModelSerializer):
+    category_id = serializers.IntegerField(write_only=True, required=True)
+    category = serializers.CharField(source='category.category_name', read_only=True)
+
     class Meta:
         model = Account
-        fields = (
+        fields = [
             "id",
             "account_name",
             "account_type",
-            "category",
             "balance",
+            "category_id",
+            "category",
             "start_date",
             "end_date",
             "overspend_rule",
             "rollover_rule",
-            "created_at",
-        )
-        read_only_fields = ("id", "account_type", "balance", "created_at")
+        ]
 
-    def validate_category(self, category):
-        user = self.context["request"].user
-
-        if category and category.user != user:
-            raise serializers.ValidationError("Invalid category")
-
-        return category
+    def validate_category_id(self, value):
+        user = self.context['request'].user
+        if not Category.objects.filter(id=value, user=user).exists():
+            raise serializers.ValidationError(
+                "Category does not exist or does not belong to you"
+            )
+        return value
 
     def create(self, validated_data):
-        user = self.context["request"].user
+        category_id = validated_data.pop("category_id")
+        user = self.context['request'].user
+        category = Category.objects.get(id=category_id, user=user)
 
+        # ❌ removed user=user here
         return Account.objects.create(
-            user=user,
-            account_type="DIGITAL",
-            balance=0.00,
+            category=category,
             **validated_data
         )
+
+    def update(self, instance, validated_data):
+        category_id = validated_data.pop("category_id", None)
+
+        if category_id:
+            user = self.context['request'].user
+            category = Category.objects.get(id=category_id, user=user)
+            instance.category = category
+
+        return super().update(instance, validated_data)
