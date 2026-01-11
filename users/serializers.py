@@ -38,16 +38,20 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         return user
 
+
 class LoginResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     full_name = serializers.CharField()
     phone_number = serializers.CharField()
+    email = serializers.EmailField(allow_null=True)
 
     def to_representation(self, instance):
         phone = instance.phone_number
-        masked = f"***{phone[-4:]}"
+        masked = f"***{phone[-4:]}" if phone else None
+
         return {
             "id": instance.id,
             "full_name": instance.full_name,
-            "phone_number": masked
+            "phone_number": masked,
+            "email": instance.email,
         }
