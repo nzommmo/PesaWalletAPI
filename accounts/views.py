@@ -7,13 +7,14 @@ from .serializers import AccountSerializer
 from transactions.models import Transaction
 from notifications.models import Notification
 from accounts.utils import get_primary_account
-
+from accounts.tasks import AccountRolloverTask
 
 class AccountViewSet(viewsets.ModelViewSet):
     serializer_class = AccountSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        AccountRolloverTask.process_user_accounts(self.request.user)
         return Account.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
