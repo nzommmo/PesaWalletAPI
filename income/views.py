@@ -7,6 +7,7 @@ from .serializers import IncomeSerializer, PrimaryTopUpSerializer
 from accounts.utils import get_primary_account
 from transactions.models import Transaction
 from notifications.models import Notification
+from income.tasks import IncomeTaskManager
 
 
 class IncomeListCreateView(generics.ListCreateAPIView):
@@ -18,6 +19,7 @@ class IncomeListCreateView(generics.ListCreateAPIView):
     serializer_class = IncomeSerializer
 
     def get_queryset(self):
+        IncomeTaskManager.process_user_incomes(self.request.user)
         return Income.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):

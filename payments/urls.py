@@ -1,7 +1,6 @@
 from django.urls import path
-from payments.views import MpesaPaymentView, MpesaCallbackView
+from .views import TransferFundsView
 
 urlpatterns = [
-    path("pay/", MpesaPaymentView.as_view()),
-    path("mpesa-callback/", MpesaCallbackView.as_view()),
+    path("transfer/", TransferFundsView.as_view(), name="transfer-funds"),
 ]

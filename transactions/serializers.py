@@ -2,17 +2,24 @@ from rest_framework import serializers
 from .models import Transaction,Account
 
 class TransactionSerializer(serializers.ModelSerializer):
+    source_account = serializers.CharField(
+        source="source_account.account_name", read_only=True
+    )
+    destination_account = serializers.CharField(
+        source="destination_account.account_name", read_only=True
+    )
+
     class Meta:
         model = Transaction
-        fields = (
-            'id',
-            'transaction_type',
-            'source_account',
-            'destination_account',
-            'amount',
-            'status',
-            'created_at',
-        )
+        fields = [
+            "id",
+            "transaction_type",
+            "amount",
+            "source_account",
+            "destination_account",
+            "status",
+            "created_at",
+        ]
 
 
 class AllocateFundsSerializer(serializers.Serializer):

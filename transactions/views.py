@@ -6,10 +6,14 @@ from django.db import transaction
 from decimal import Decimal
 from transactions.models import Transaction
 from notifications.models import Notification
-from transactions.serializers import AllocateFundsSerializer,TopUpSerializer,IncomeSerializer
+from transactions.serializers import AllocateFundsSerializer,TopUpSerializer,IncomeSerializer,TransactionSerializer
 from accounts.models import Account
 from datetime import timedelta
 from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
 
 
 class AllocateFundsView(APIView):
@@ -191,3 +195,30 @@ class IncomeView(APIView):
             },
             status=status.HTTP_201_CREATED
         )
+    
+
+class AccountTransactionsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, account_id):
+        user = request.user
+
+        account = get_object_or_404(Account, id=account_id, user=user)
+
+        transactions = Transaction.objects.filter(
+            user=user
+        ).filter(
+            Q(source_account=account) | Q(destination_account=account)
+        ).order_by("-created_at")
+
+        serializer = TransactionSerializer(transactions, many=True)
+
+        return Response({
+            "account": {
+                "id": account.id,
+                "name": account.account_name,
+                "balance": account.balance,
+                "limit": account.limit_amount,
+            },
+            "transactions": serializer.data
+        })

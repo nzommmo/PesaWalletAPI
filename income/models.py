@@ -1,5 +1,7 @@
 from django.db import models
+from django.utils import timezone
 from users.models import User
+
 
 class Income(models.Model):
     FREQUENCY_CHOICES = (
@@ -16,6 +18,9 @@ class Income(models.Model):
     frequency = models.CharField(max_length=15, choices=FREQUENCY_CHOICES)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+
+    last_applied = models.DateField(null=True, blank=True)  # 👈 ADD THIS
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
