@@ -43,7 +43,7 @@ class TransferFundsView(APIView):
                 source_account=source_account,
                 destination_account=primary_recipient,
                 amount=amount,
-                transaction_type="TRANSFER",
+                transaction_type="PAYMENT",
                 status="SUCCESS"
             )
 
