@@ -28,3 +28,4 @@ class Transaction(models.Model):
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     status = models.CharField(max_length=10, choices=STATUS)
     created_at = models.DateTimeField(auto_now_add=True)
+    reference = models.CharField(max_length=100, null=True, blank=True, unique=True)

@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -172,3 +173,10 @@ AUTHENTICATION_BACKENDS = [
     "users.backends.PhoneBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
+
+# Paystack Settings
+PAYSTACK_SECRET_KEY = "sk_test_7b80ec12f74c34b577c43f1750d09c042f006855"
+PAYSTACK_PUBLIC_KEY = "pk_test_391a34f4838ccd85dbc784752746bd52238e30ad"
+# In your settings.py
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+MOBILE_APP_SCHEME = os.environ.get('MOBILE_APP_SCHEME', 'pesawallet')  # Your app's deep link scheme
