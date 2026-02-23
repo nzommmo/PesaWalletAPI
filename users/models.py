@@ -1,6 +1,3 @@
-from django.db import models
-
-# Create your models here.
 # users/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
@@ -15,10 +12,10 @@ class UserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-
     def create_superuser(self, phone_number, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("is_superadmin", True)  # ← add this
         return self.create_user(phone_number, password, **extra_fields)
 
 
@@ -29,15 +26,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     default_mpesa_number = models.CharField(max_length=20)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_superadmin = models.BooleanField(default=False)  # ← add this
     created_at = models.DateTimeField(auto_now_add=True)
-
 
     USERNAME_FIELD = 'phone_number'
     REQUIRED_FIELDS = ['full_name']
 
-
     objects = UserManager()
 
-
-def __str__(self):
-    return self.phone_number
+    def __str__(self):  # ← this was outside the class, fix indentation
+        return self.phone_number
