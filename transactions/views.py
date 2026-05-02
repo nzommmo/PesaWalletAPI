@@ -316,39 +316,103 @@ class ReportsView(APIView):
 
     def get(self, request):
         user = request.user
+        last_month = timezone.now() - timedelta(days=30)
 
-        accounts = Account.objects.filter(user=user)
+        # ── Existing: accounts & total balance ──────────────────────────
+        accounts = Account.objects.filter(user=user).select_related("category")
         total_balance = sum(a.balance for a in accounts)
 
         accounts_data = [
             {
                 "account_name": a.account_name,
                 "balance": a.balance,
-                "account_type": a.account_type
-            } for a in accounts
+                "account_type": a.account_type,
+            }
+            for a in accounts
         ]
 
-        last_month = timezone.now() - timedelta(days=30)
+        # ── Existing: recent transactions ───────────────────────────────
         transactions = Transaction.objects.filter(
             user=user,
-            created_at__gte=last_month
-        ).order_by('-created_at')
+            created_at__gte=last_month,
+        ).select_related("source_account", "destination_account").order_by("-created_at")
 
         transactions_data = [
             {
                 "transaction_type": t.transaction_type,
                 "amount": t.amount,
                 "status": t.status,
-                "created_at": t.created_at
-            } for t in transactions
+                "created_at": t.created_at,
+            }
+            for t in transactions
         ]
+
+        # ── NEW 1: Spending by category ─────────────────────────────────
+        # "Spending" = money that LEFT an account (source_account) in ALLOCATION
+        # or TRANSFER transactions that succeeded, grouped by that account's category.
+        spending_qs = (
+            Transaction.objects.filter(
+                user=user,
+                status="SUCCESS",
+                created_at__gte=last_month,
+                transaction_type__in=["ALLOCATION", "TRANSFER", "PAYMENT"],
+                source_account__isnull=False,
+                source_account__category__isnull=False,
+            )
+            .select_related("source_account__category")
+        )
+
+        category_totals: dict = {}
+        for t in spending_qs:
+            cat_name = t.source_account.category.category_name
+            category_totals[cat_name] = category_totals.get(cat_name, Decimal("0")) + t.amount
+
+        spending_by_category = [
+            {"category": cat, "total_spent": total}
+            for cat, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
+        ]
+
+        # ── NEW 2: Digital (non-PRIMARY) account spending overview ──────
+        digital_accounts = [a for a in accounts if a.account_type != "PRIMARY"]
+
+        digital_overview = []
+        for acct in digital_accounts:
+            # Amount spent from this account in the period
+            spent = sum(
+                t.amount
+                for t in transactions   # already filtered to last_month + this user
+                if t.source_account_id == acct.id and t.status == "SUCCESS"
+            )
+            # Amount received into this account in the period
+            received = sum(
+                t.amount
+                for t in transactions
+                if t.destination_account_id == acct.id and t.status == "SUCCESS"
+            )
+
+            limit = acct.limit_amount or Decimal("0")
+            health_pct = round((acct.balance / limit) * 100, 2) if limit > 0 else 0
+
+            digital_overview.append({
+                "account_id": acct.id,
+                "account_name": acct.account_name,
+                "category": acct.category.category_name if acct.category else None,
+                "balance": acct.balance,
+                "limit_amount": limit,
+                "health_percentage": health_pct,
+                "spent_this_period": spent,
+                "received_this_period": received,
+                "overspend_rule": acct.overspend_rule,
+            })
 
         return Response({
             "total_balance": total_balance,
             "accounts": accounts_data,
-            "transactions_last_month": transactions_data
-        })
-    
+            "transactions_last_month": transactions_data,
+            # New keys 👇
+            "spending_by_category": spending_by_category,
+            "digital_accounts_overview": digital_overview,
+        })    
 
 class IncomeView(APIView):
     permission_classes = [IsAuthenticated]
