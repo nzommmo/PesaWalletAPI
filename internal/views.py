@@ -55,12 +55,14 @@ class AdminUsersView(APIView):
             total_balance = sum(a.balance for a in accounts)
 
             data.append({
-                "user_id": user.id,
+            "user_id": user.id,
                 "email": user.email,
                 "phone": user.phone_number,
                 "accounts_count": accounts.count(),
-                "total_balance": total_balance
+                "total_balance": total_balance,
+                "is_active": user.is_active,    # ← add
             })
+        
 
         return Response(data)
 
@@ -92,3 +94,30 @@ class AdminTransactionsView(APIView):
         ]
 
         return Response(data)
+
+
+class AdminUserDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
+
+        is_active = request.data.get("is_active")
+        if is_active is None:
+            return Response({"error": "is_active field required"}, status=400)
+
+        # Prevent admin from deactivating themselves
+        if user == request.user:
+            return Response({"error": "You cannot deactivate your own account"}, status=400)
+
+        user.is_active = is_active
+        user.save(update_fields=["is_active"])
+
+        return Response({
+            "user_id": user.id,
+            "email": user.email,
+            "is_active": user.is_active,
+        })

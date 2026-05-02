@@ -50,11 +50,12 @@ INSTALLED_APPS = [
     'payments',
     'notifications',
     "income",
+    "internal",
 ]
 
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # Must be first
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -73,7 +74,28 @@ REST_FRAMEWORK = {
     ),
 }
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173","https://pesawallet.zearom.com"]
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+# Allow all origins in development (mobile apps don't send a browser Origin).
+# In production, switch back to CORS_ALLOWED_ORIGINS with your real domains.
+CORS_ALLOW_ALL_ORIGINS = True          # ← fixes the mobile app 403/HTML error
+
+# Keep this for when you go to production — just flip the flag above to False.
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",            # Vite web frontend
+    "https://pesawallet.zearom.com",    # Deployed web frontend
+    "http://localhost:8081",            # Expo dev server
+    "http://localhost:19006",           # Expo web
+]
+
+# Mobile apps using JWT don't need CSRF — exempt the API entirely.
+CORS_URLS_REGEX = r'^/api/.*$'
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "https://pesawallet.zearom.com",
+]
+# ---------------------------------------------------------------------------
 
 
 SIMPLE_JWT = {
@@ -106,7 +128,6 @@ WSGI_APPLICATION = 'pesawallet.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# Production database
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -115,7 +136,7 @@ DATABASES = {
 }
 
 
-# Local Database
+# Local Database (MySQL — uncomment to use)
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.mysql',
@@ -132,39 +153,22 @@ DATABASES = {
 
 
 # Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 
 # Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
-
+# Static files
 STATIC_URL = 'static/'
 
 
@@ -176,8 +180,8 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # Paystack Settings
-PAYSTACK_SECRET_KEY = "sk_test_7b80ec12f74c34b577c43f1750d09c042f006855"
-PAYSTACK_PUBLIC_KEY = "pk_test_391a34f4838ccd85dbc784752746bd52238e30ad"
-# In your settings.py
+PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY', 'sk_test_7b80ec12f74c34b577c43f1750d09c042f006855')
+PAYSTACK_PUBLIC_KEY = os.environ.get('PAYSTACK_PUBLIC_KEY', 'pk_test_391a34f4838ccd85dbc784752746bd52238e30ad')
+
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
-MOBILE_APP_SCHEME = os.environ.get('MOBILE_APP_SCHEME', 'pesawallet')  # Your app's deep link scheme
+MOBILE_APP_SCHEME = os.environ.get('MOBILE_APP_SCHEME', 'pesawallet')

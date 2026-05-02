@@ -5,7 +5,7 @@ from django.db import transaction
 from decimal import Decimal
 from transactions.models import Transaction
 from notifications.models import Notification
-from transactions.serializers import AllocateFundsSerializer,TopUpSerializer,IncomeSerializer,TransactionSerializer
+from transactions.serializers import AllocateFundsSerializer, TopUpSerializer, IncomeSerializer, TransactionSerializer
 from accounts.models import Account
 from datetime import timedelta
 from django.utils import timezone
@@ -14,7 +14,8 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.conf import settings
 from django.db import transaction as db_transaction
-import requests  # Add this import
+import requests
+import uuid
 
 
 class AllocateFundsView(APIView):
@@ -31,14 +32,13 @@ class AllocateFundsView(APIView):
         destination = serializer.validated_data["destination"]
         amount = serializer.validated_data["amount"]
 
-        # 🔐 Overspend enforcement
+        # Overspend enforcement
         if source.balance < amount:
             if source.overspend_rule == "BLOCK":
                 return Response(
                     {"error": "Insufficient funds"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
             if source.overspend_rule == "WARN":
                 Notification.objects.create(
                     user=request.user,
@@ -46,7 +46,6 @@ class AllocateFundsView(APIView):
                     message=f"Overspending {amount} from {source.account_name}"
                 )
 
-        # 💰 Atomic money debugging protection
         with transaction.atomic():
             source.balance -= amount
             destination.balance += amount
@@ -78,57 +77,61 @@ class TopUpView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        # ── DEBUG ──────────────────────────────────────────────────────────
+        print("=" * 60)
+        print("TOP-UP REQUEST DATA:  ", request.data)
+        print("USER:                 ", request.user)
+        print("USER EMAIL:           ", repr(request.user.email))
+        print("=" * 60)
+        # ───────────────────────────────────────────────────────────────────
+
         serializer = TopUpSerializer(data=request.data)
         if not serializer.is_valid():
+            print("SERIALIZER ERRORS:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         amount = serializer.validated_data['amount']
-        
+        print(f"Validated amount: {amount}")
+
         # Validate user email
         if not request.user.email:
+            print("FAILED: user has no email")
             return Response(
-                {"error": "User email is required. Please update your profile."}, 
+                {"error": "User email is required. Please update your profile."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Get user's primary account
         try:
             primary_account = Account.objects.get(
-                user=request.user, 
+                user=request.user,
                 account_type='PRIMARY'
             )
+            print(f"Primary account found: {primary_account.id} — {primary_account.account_name}")
         except Account.DoesNotExist:
+            print("FAILED: no PRIMARY account for this user")
             return Response(
-                {"error": "Primary account not found"}, 
+                {"error": "Primary account not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # For KES, convert to cents
+        # Convert to cents for Paystack
         amount_in_cents = int(amount * 100)
 
-        # Paystack API endpoint
         url = "https://api.paystack.co/transaction/initialize"
-        
         headers = {
             "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
             "Content-Type": "application/json"
         }
-        
-        # Generate unique reference
-        import uuid
+
         unique_ref = f"topup_{request.user.id}_{uuid.uuid4().hex[:8]}"
-        
-        # Determine callback URL based on platform
-        # Frontend can send a 'platform' field: 'web' or 'mobile'
+
         platform = request.data.get('platform', 'web')
-        
         if platform == 'mobile':
-            # Deep link for mobile app
             callback_url = f"{settings.MOBILE_APP_SCHEME}://payment/verify"
         else:
-            # Web URL
             callback_url = f"{settings.FRONTEND_URL}/top-up"
-        
+
         payload = {
             "email": request.user.email,
             "amount": amount_in_cents,
@@ -150,14 +153,13 @@ class TopUpView(APIView):
         }
 
         try:
-            print(f"Initializing Paystack payment: {payload}")
+            print(f"Sending to Paystack: {payload}")
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             response_data = response.json()
-            
-            print(f"Paystack response: {response_data}")
+            print(f"Paystack HTTP status: {response.status_code}")
+            print(f"Paystack response:    {response_data}")
 
             if response_data.get('status') == True:
-                # Create pending transaction record
                 txn = Transaction.objects.create(
                     user=request.user,
                     destination_account=primary_account,
@@ -175,122 +177,110 @@ class TopUpView(APIView):
                 }, status=status.HTTP_200_OK)
             else:
                 error_message = response_data.get('message', 'Failed to initialize payment')
-                print(f"Paystack error: {error_message}")
+                print(f"Paystack rejected: {error_message}")
                 return Response(
-                    {"error": error_message}, 
+                    {"error": error_message},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
         except requests.Timeout:
+            print("Paystack request timed out")
             return Response(
-                {"error": "Payment gateway timeout. Please try again."}, 
+                {"error": "Payment gateway timeout. Please try again."},
                 status=status.HTTP_504_GATEWAY_TIMEOUT
             )
         except Exception as e:
-            print(f"Exception: {str(e)}")
+            print(f"Exception during Paystack call: {str(e)}")
             return Response(
-                {"error": f"Payment initialization failed: {str(e)}"}, 
+                {"error": f"Payment initialization failed: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
 class VerifyTopUpView(APIView):
-    permission_classes = []  # Public endpoint
+    permission_classes = []  # Public endpoint — Paystack calls this
 
     def get(self, request):
         reference = request.query_params.get('reference')
-        
-        print(f"\n{'='*50}")
+
+        print(f"\n{'=' * 50}")
         print(f"VERIFICATION REQUEST RECEIVED")
         print(f"Reference: {reference}")
         print(f"Query params: {request.query_params}")
-        print(f"{'='*50}\n")
-        
+        print(f"{'=' * 50}\n")
+
         if not reference:
             return Response(
-                {"error": "Reference is required"}, 
+                {"error": "Reference is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Paystack API endpoint
         url = f"https://api.paystack.co/transaction/verify/{reference}"
-        
-        headers = {
-            "Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}",
-        }
+        headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
 
         try:
-            print(f"Verifying transaction with Paystack: {reference}")
-            
-            # Verify transaction with Paystack
+            print(f"Verifying with Paystack: {reference}")
             response = requests.get(url, headers=headers)
             response_data = response.json()
-            
             print(f"Paystack verification response: {response_data}")
 
             if response_data.get('status') and response_data['data']['status'] == 'success':
-                # Get the transaction record
                 try:
                     txn = Transaction.objects.get(reference=reference)
-                    print(f"Transaction found: {txn.id}, Status: {txn.status}")
+                    print(f"Transaction found: {txn.id}, status: {txn.status}")
                 except Transaction.DoesNotExist:
-                    print(f"Transaction NOT found with reference: {reference}")
+                    print(f"Transaction NOT found: {reference}")
                     return Response(
-                        {"error": "Transaction not found"}, 
+                        {"error": "Transaction not found"},
                         status=status.HTTP_404_NOT_FOUND
                     )
 
                 if txn.status == 'PENDING':
-                    # Update transaction and account balance atomically
                     with db_transaction.atomic():
                         txn.status = 'SUCCESS'
                         txn.save()
 
-                        # Update account balance
                         account = txn.destination_account
                         old_balance = account.balance
                         account.balance += txn.amount
                         account.save()
 
-                        print(f"Account updated: {old_balance} -> {account.balance}")
+                        print(f"Balance updated: {old_balance} → {account.balance}")
 
-                        # Create success notification
                         Notification.objects.create(
                             user=txn.user,
                             notification_type="SUCCESS",
                             message=f"Account topped up with KES {txn.amount}"
                         )
-                    
-                    print(f"Transaction {reference} verified successfully!")
 
+                    print(f"Transaction {reference} verified and processed.")
                     return Response({
                         'status': 'success',
                         'message': 'Payment verified successfully',
                         'amount': str(txn.amount),
                         'new_balance': str(account.balance)
                     }, status=status.HTTP_200_OK)
+
                 else:
-                    print(f"Transaction already processed. Current status: {txn.status}")
+                    print(f"Already processed. Status: {txn.status}")
                     return Response({
                         'status': 'already_processed',
                         'message': 'Transaction already processed',
                         'amount': str(txn.amount),
                         'new_balance': str(txn.destination_account.balance)
                     }, status=status.HTTP_200_OK)
+
             else:
                 print(f"Paystack verification failed: {response_data}")
-                # Update transaction status to failed
                 try:
                     txn = Transaction.objects.get(reference=reference)
                     if txn.status == 'PENDING':
                         txn.status = 'FAILED'
                         txn.save()
-                        
-                        # Create failure notification
                         Notification.objects.create(
                             user=txn.user,
                             notification_type="ERROR",
-                            message=f"Top up payment failed"
+                            message="Top up payment failed"
                         )
                 except Transaction.DoesNotExist:
                     pass
@@ -304,9 +294,8 @@ class VerifyTopUpView(APIView):
             print(f"Verification exception: {str(e)}")
             import traceback
             traceback.print_exc()
-            
             return Response(
-                {"error": str(e)}, 
+                {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -318,7 +307,6 @@ class ReportsView(APIView):
         user = request.user
         last_month = timezone.now() - timedelta(days=30)
 
-        # ── Existing: accounts & total balance ──────────────────────────
         accounts = Account.objects.filter(user=user).select_related("category")
         total_balance = sum(a.balance for a in accounts)
 
@@ -331,7 +319,6 @@ class ReportsView(APIView):
             for a in accounts
         ]
 
-        # ── Existing: recent transactions ───────────────────────────────
         transactions = Transaction.objects.filter(
             user=user,
             created_at__gte=last_month,
@@ -347,9 +334,7 @@ class ReportsView(APIView):
             for t in transactions
         ]
 
-        # ── NEW 1: Spending by category ─────────────────────────────────
-        # "Spending" = money that LEFT an account (source_account) in ALLOCATION
-        # or TRANSFER transactions that succeeded, grouped by that account's category.
+        # Spending by category
         spending_qs = (
             Transaction.objects.filter(
                 user=user,
@@ -372,18 +357,16 @@ class ReportsView(APIView):
             for cat, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
         ]
 
-        # ── NEW 2: Digital (non-PRIMARY) account spending overview ──────
+        # Digital account overview
         digital_accounts = [a for a in accounts if a.account_type != "PRIMARY"]
 
         digital_overview = []
         for acct in digital_accounts:
-            # Amount spent from this account in the period
             spent = sum(
                 t.amount
-                for t in transactions   # already filtered to last_month + this user
+                for t in transactions
                 if t.source_account_id == acct.id and t.status == "SUCCESS"
             )
-            # Amount received into this account in the period
             received = sum(
                 t.amount
                 for t in transactions
@@ -409,10 +392,10 @@ class ReportsView(APIView):
             "total_balance": total_balance,
             "accounts": accounts_data,
             "transactions_last_month": transactions_data,
-            # New keys 👇
             "spending_by_category": spending_by_category,
             "digital_accounts_overview": digital_overview,
-        })    
+        })
+
 
 class IncomeView(APIView):
     permission_classes = [IsAuthenticated]
@@ -425,11 +408,9 @@ class IncomeView(APIView):
         amount = serializer.validated_data["amount"]
 
         with transaction.atomic():
-            # Update account balance
             account.balance += amount
             account.save()
 
-            # Create transaction
             txn = Transaction.objects.create(
                 user=request.user,
                 destination_account=account,
@@ -438,7 +419,6 @@ class IncomeView(APIView):
                 status="SUCCESS"
             )
 
-            # Create notification
             Notification.objects.create(
                 user=request.user,
                 notification_type="SUCCESS",
@@ -453,7 +433,7 @@ class IncomeView(APIView):
             },
             status=status.HTTP_201_CREATED
         )
-    
+
 
 class AccountTransactionsView(APIView):
     permission_classes = [IsAuthenticated]

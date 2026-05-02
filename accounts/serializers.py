@@ -3,7 +3,7 @@ from .models import Account
 from categories.models import Category
 
 class AccountSerializer(serializers.ModelSerializer):
-    category_id = serializers.IntegerField(write_only=True, required=True)
+    category_id = serializers.IntegerField(write_only=True, required=False) 
     category = serializers.CharField(source='category.category_name', read_only=True)
     health_percentage = serializers.SerializerMethodField()
 
