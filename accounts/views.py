@@ -14,6 +14,9 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from collections import defaultdict   
 from rest_framework.decorators import action   
+from rest_framework import status
+
+from .serializers import ChangePasswordSerializer
 
 
 class AccountViewSet(viewsets.ModelViewSet):
@@ -221,3 +224,39 @@ class AllAccountsTransactionsView(APIView):
             "total_transactions": transactions.count(),
             "transactions": data
         })
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+
+        old_password = serializer.validated_data["old_password"]
+        new_password = serializer.validated_data["new_password"]
+
+        # Verify old password
+        if not user.check_password(old_password):
+            return Response(
+                {"error": "Old password is incorrect"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Prevent same password reuse
+        if old_password == new_password:
+            return Response(
+                {"error": "New password cannot be the same as old password"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Set new password
+        user.set_password(new_password)
+        user.save()
+
+        return Response(
+            {"message": "Password updated successfully"},
+            status=status.HTTP_200_OK
+        )

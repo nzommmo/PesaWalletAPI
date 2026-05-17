@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Account
 from categories.models import Category
 
+
 class AccountSerializer(serializers.ModelSerializer):
     category_id = serializers.IntegerField(write_only=True, required=False) 
     category = serializers.CharField(source='category.category_name', read_only=True)
@@ -77,3 +78,9 @@ class AccountSerializer(serializers.ModelSerializer):
         )
 
         return account
+
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=8)
